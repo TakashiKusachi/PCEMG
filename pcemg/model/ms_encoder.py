@@ -200,5 +200,6 @@ class ms_peak_encoder_cnn(nn.Module):
         epsilon = torch.randn_like(z_mean)
         z_vecs = z_mean + torch.exp(z_log_var / 2) * epsilon*sample_rate
         return z_vecs, kl_loss
+        
 if __name__=="__main__":
     print("What?")
