@@ -10,7 +10,19 @@ setup(
     version="0.0.1",
     author="TakashiKusachi",
     description=desctiprion,
-    install_requires=[],
+    install_requires=[
+        'torchvision',
+        'torch',
+        'torch-jtnn >= 0.0.1'
+    ],
+    extras_require={
+        'example':[
+            'gitpython','scikit-learn','tqdm'
+            ],
+        'doc':[
+            'sphinx'
+            ],
+    },
     packages=find_packages(exclude=['example']),
     entry_points={
         'console_scripts':[

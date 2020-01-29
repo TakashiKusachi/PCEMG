@@ -105,9 +105,9 @@ class ms_peak_encoder_cnn(nn.Module):
         self.embedding = nn.Embedding(max_mpz,embedding_size)
         
         self.convSequential=nn.Sequential(\
-                nn.Conv1d(self.embedding_size+1,conv1_channel, kernel1_width, stride=1, padding=(kernel1_width-1)/2),nn.LeakyReLU(),\
-                nn.Conv1d(conv1_channel,conv1_channel, kernel1_width, stride=1, padding=(kernel1_width-1)/2),nn.LeakyReLU(),\
-                nn.Conv1d(conv1_channel,conv1_channel, kernel1_width, stride=1, padding=(kernel1_width-1)/2),nn.LeakyReLU(),\
+                nn.Conv1d(self.embedding_size+1,conv1_channel, kernel1_width, stride=1, padding=int((kernel1_width-1)/2)),nn.LeakyReLU(),\
+                nn.Conv1d(conv1_channel,conv1_channel, kernel1_width, stride=1, padding=int((kernel1_width-1)/2)),nn.LeakyReLU(),\
+                nn.Conv1d(conv1_channel,conv1_channel, kernel1_width, stride=1, padding=int((kernel1_width-1)/2)),nn.LeakyReLU(),\
                 #nn.MaxPool1d(2),\
                 #nn.Conv1d(conv1_channel,conv2_channel, kernel2_width, stride=1, padding=(kernel2_width-1)/2),nn.LeakyReLU(),\
                 #nn.Conv1d(conv2_channel,conv2_channel, kernel2_width, stride=1, padding=(kernel2_width-1)/2),nn.LeakyReLU(),\
@@ -121,15 +121,15 @@ class ms_peak_encoder_cnn(nn.Module):
         self.rnn = nn.GRU(input_size=conv1_channel,hidden_size=hidden_size,batch_first=True,num_layers=num_rnn_layers,bidirectional=bidirectional)
         #self.hidden_linear = nn.Linear(conv_output_channel*int(input_size/2/2/2),hidden_size)
         if self.bidirectional:
-            self.T_mean = nn.Linear(hidden_size*2, output_size/2)
-            self.T_var = nn.Linear(hidden_size*2, output_size/2)
-            self.G_mean = nn.Linear(hidden_size*2, output_size/2)
-            self.G_var = nn.Linear(hidden_size*2, output_size/2)
+            self.T_mean = nn.Linear(hidden_size*2, int(output_size/2))
+            self.T_var = nn.Linear(hidden_size*2, int(output_size/2))
+            self.G_mean = nn.Linear(hidden_size*2, int(output_size/2))
+            self.G_var = nn.Linear(hidden_size*2, int(output_size/2))
         else:
-            self.T_mean = nn.Linear(hidden_size, output_size/2)
-            self.T_var = nn.Linear(hidden_size, output_size/2)
-            self.G_mean = nn.Linear(hidden_size, output_size/2)
-            self.G_var = nn.Linear(hidden_size, output_size/2)
+            self.T_mean = nn.Linear(hidden_size, int(output_size/2))
+            self.T_var = nn.Linear(hidden_size,int(output_size/2))
+            self.G_mean = nn.Linear(hidden_size, int(output_size/2))
+            self.G_var = nn.Linear(hidden_size, int(output_size/2))
         self.output = nn.Linear(output_size,output_size)
         
     def forward(self,x,y,sample=False,training=True,sample_rate=1):
