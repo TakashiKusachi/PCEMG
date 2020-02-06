@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from rdkit import Chem
 import numpy as np
-import os, random
+import os, random,math
 from tqdm import tqdm
 import pickle
 import rdkit
@@ -135,7 +135,7 @@ class MS_Dataset_pickle(object):
         self.shuffle = True
     
     def __len__(self):
-        return len(self.dataset)
+        return math.floor(len(self.dataset)/self.batch_size)
     
     def __iter__(self):
         if self.shuffle: 
