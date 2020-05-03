@@ -23,9 +23,11 @@ setup(
             'sphinx'
             ],
     },
-    packages=find_packages(exclude=['example']),
+    packages=find_packages(exclude=['example','tests']),
     entry_points={
         'console_scripts':[
         ]
-    }
+    },
+    test_requires=['GitPython'],
+    test_suite = 'tests',
 )

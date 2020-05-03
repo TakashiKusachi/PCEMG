@@ -3,6 +3,7 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
 import numpy as np
 import os, random,math
 from tqdm import tqdm
@@ -86,7 +87,7 @@ class MS_Dataset(object):
         del batches, dataset, dataloader
 
 def is_select(one):
-    return one["smiles"]!="N/A" and one["ms_type"]=="MS" and one["instrument_type"]=="EI-B" and "ionization_energy" in one and one["ionization_energy"]=="70 eV" and one["ion_mode"]=="POSITIVE" and "2H" not in one["smiles"]
+    return one["smiles"]!="N/A" and one["ms_type"]=="MS" and one["instrument_type"]=="EI-B" and "ionization_energy" in one and one["ionization_energy"]=="70 eV" and one["ion_mode"]=="POSITIVE" and "2H" not in one["smiles"] #and round(rdMolDescriptors._CalcMolWt(Chem.MolFromSmiles(one['smiles']))) in one['peak_x'].astype(int) 
 
 def data_catch(one):
     mol = molfromsmiles(one["smiles"])
