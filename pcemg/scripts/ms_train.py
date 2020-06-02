@@ -140,13 +140,14 @@ class MS_Train():
             assm_loss, assm_acc = dec_model.assm(x_batch, x_jtmpn_holder, mol_vec , x_tree_mess)
 
             l2_reg = 0
-            for W in enc_model.parameters():
-                if l2_reg is None:
-                    l2_reg = W.norm(2)
-                else:
-                    l2_reg = l2_reg + W.norm(2)
-            for W in dec_model.parameters():
-                l2_reg = l2_reg + W.norm(2)
+            l2_reg = enc_model.params_norm()
+            #for W in enc_model.parameters():
+            #    if l2_reg is None:
+            #        l2_reg = W.norm(2)
+            #    else:
+            #        l2_reg = l2_reg + W.norm(2)
+            #for W in dec_model.parameters():
+            #    l2_reg = l2_reg + W.norm(2)
 
             total_loss = word_loss*word_rate+\
                 topo_loss*topo_rate+\
@@ -159,7 +160,8 @@ class MS_Train():
             if epoch >= fine_tunning_warmup:
                 dec_optimizer.step()
                 if iteration % anneal_iter == 0 :
-                    dec_scheduler.step()
+                    #dec_scheduler.step()
+                    pass
             
             meters = meters + np.array([kl_loss.item(),word_acc * 100, topo_acc * 100, assm_acc * 100,word_loss.item(),topo_loss.item(),assm_loss.item()])
             del x,y,h
@@ -181,14 +183,24 @@ class MS_Train():
                 vali_meters *= 0
 
             if iteration % save_interval == 0:
-                torch.save(enc_model.state_dict(), temp_path/"enc_model"/"model.iter-{}".format(str(iteration)))
-                torch.save(dec_model.state_dict(), temp_path/"dec_model"/"model.iter-{}".format(str(iteration)))
+                #torch.save(enc_model.state_dict(), temp_path/"enc_model"/"model.iter-{}".format(str(iteration)))
+                #torch.save(dec_model.state_dict(), temp_path/"dec_model"/"model.iter-{}".format(str(iteration)))
+                self.save_model(enc_model,dec_model,f"model.iter-{iteration}",temp_path)
 
             if epoch % kl_anneal_iter == 0 and epoch >= warmup:
                 beta = min(max_beta, beta + step_beta)
 
             if iteration % anneal_iter == 0 :
-                enc_scheduler.step()
+                #enc_scheduler.step()
+                pass
+        
+        self.save_model(enc_model,dec_model,"model.iter-last",temp_path)
+
+    def save_model(self,enc_model,dec_model,file_name,temp_path):
+        torch.save(enc_model.state_dict(), temp_path/"enc_model"/file_name)
+        torch.save(dec_model.state_dict(), temp_path/"dec_model"/file_name)
+
+        
 
     def copy_require_file(self,tempdir):
         temp_path = Path(tempdir.name)

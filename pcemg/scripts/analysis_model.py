@@ -78,8 +78,8 @@ class AnalysisModel():
 
             sample_rate_list = [
                 [0.0,1],
-                [1.0,5],
-                [3.0,10]
+                #[1.0,5],
+                #[3.0,10]
             ]
 
             class Fetcher():
@@ -119,7 +119,7 @@ class AnalysisModel():
                         hlatent_size = int(h.shape[1]/2)  
                         tree_vec = h[:,:hlatent_size]
                         mol_vec  = h[:,hlatent_size:]
-
+                        
                         for num in range(h.size()[0]):
                             a_tree_vec = tree_vec[num].view(1,hlatent_size)
                             a_mol_vec = mol_vec[num].view(1,hlatent_size)
@@ -205,13 +205,18 @@ class AnalysisModel():
     @staticmethod
     def find_trained_model(temp_path):
         
-        def extract_iter_num(path):
-            return int(path.name.split('-')[1])
+        def extract_iter_num(mlist):
+            for path in mlist:
+                try:
+                    yield int(path.name.split('-')[1])
+                except ValueError:
+                    pass
+            #return int(path.name.split('-')[1])
 
         enc_model_list = list(temp_path.glob("./**/enc_model/model.iter-*"))
         dec_model_list = list(temp_path.glob("./**/dec_model/model.iter-*"))
         
-        iter_list = sorted([extract_iter_num(model) for model in enc_model_list])
+        iter_list = sorted([n for n in extract_iter_num(enc_model_list)])
 
         model_list = {
             'encoder':enc_model_list,
@@ -248,18 +253,23 @@ class AnalysisModel():
                 header += str(i) + " "
             header += "] >> "
 
-        select_iter = int(input(header))
-        if not select_iter in iter_list:
-            raise IndexError()
+        select_iter = input(header)
+        #if not int(select_iter) in iter_list:
+        #    raise IndexError()
+
+        enc_model = None
+        dec_model = None
 
         for model_path in model_list['encoder']:
-             if "model.iter-"+str(select_iter) in model_path.name:
+             if "model.iter-"+select_iter in model_path.name:
                  enc_model = model_path
 
         for model_path in model_list['decoder']:
-             if "model.iter-"+str(select_iter) in model_path.name:
+             if "model.iter-"+select_iter in model_path.name:
                  dec_model = model_path
-            
+
+        assert enc_model is not None and dec_model is not None
+
         return enc_model,dec_model
 
     @staticmethod
