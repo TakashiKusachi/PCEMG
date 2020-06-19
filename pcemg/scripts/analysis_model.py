@@ -29,7 +29,7 @@ from multiprocessing import Pool
 
 from torch_jtnn import *
 from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn
+from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn,raw_spectrum_encoder
 
 class AnalysisModel():
     def __init__(self,trained_result_path,eval_mode):
@@ -78,8 +78,8 @@ class AnalysisModel():
 
             sample_rate_list = [
                 [0.0,1],
-                #[1.0,5],
-                #[3.0,10]
+                [1.0,5],
+                [3.0,10]
             ]
 
             class Fetcher():

@@ -25,7 +25,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 
 from torch_jtnn import *
 from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn
+from pcemg.model.ms_encoder import ms_peak_encoder_cnn,raw_spectrum_encoder
 
 class MS_Train():
     """
@@ -79,6 +79,7 @@ class MS_Train():
             dec_model = JTNNVAE(vocab=vocab,**config['JTVAE']).to('cuda')
             
             enc_model = ms_peak_encoder_cnn(train_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
+            #enc_model = raw_spectrum_encoder(train_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
 
             print(dec_model)
             print(enc_model)
@@ -86,9 +87,14 @@ class MS_Train():
 
             enc_optimizer = optim.Adam(enc_model.parameters(),lr=1e-03)
             dec_optimizer = optim.Adam(dec_model.parameters(),lr=1e-03)
-
-            self.training(enc_model,dec_model,enc_optimizer,dec_optimizer,train_dataset,vali_dataset,temp_path,
-                **config['TRAINING'])
+            try:
+                self.training(enc_model,dec_model,enc_optimizer,dec_optimizer,train_dataset,vali_dataset,temp_path,
+                    **config['TRAINING'])
+            except KeyboardInterrupt:
+                print("User terminated.")
+            finally:
+                print("Save last model.")
+                self.save_model(enc_model,dec_model,"model.iter-last",temp_path)
 
         finally:
             str_time = self.starttime.strftime('%Y%m%d-%H%M')
