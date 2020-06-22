@@ -86,7 +86,7 @@ class ms_peak_encoder_cnn(nn.Module):
                  conv2_channel=128,kernel2_width=5,\
                  conv_output_channel=256,conv_output_width=5,
                  hidden_size=100,num_rnn_layers=2,bidirectional=False,\
-                 output_size=56,dropout_rate=0.5,
+                 output_size=56,dropout_rate=0.5,use_batchnorm=False,
                  varbose=True):
         
         super(ms_peak_encoder_cnn, self).__init__()
@@ -103,9 +103,9 @@ class ms_peak_encoder_cnn(nn.Module):
         lay2_pad = int(((conv_output_width-1)/2))
 
         self.convSequential=nn.Sequential(OrderedDict([\
-            ('conv1-1',conv_set(self.embedding_size+1, conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
-            ('conv1-2',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
-            ('conv1-3',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
+            ('conv1-1',conv_set(self.embedding_size+1, conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
+            ('conv1-2',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
+            ('conv1-3',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
             #('pool1',nn.MaxPool1d(2)),\
             #('conv2-1',conv_set(conv1_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=True)), \
             #('conv2-2',conv_set(conv2_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=True)), \
@@ -143,7 +143,16 @@ class ms_peak_encoder_cnn(nn.Module):
             #self.G_var = nn.Linear(hidden_size, int(output_size/2))
         self.output = nn.Linear(output_size,output_size)
         
-    def forward(self,x,y,sample=False,training=True,sample_rate=1):
+    def forward(self,x,y,sample=True,sample_rate=1):
+        """
+
+        Args:
+            x (tensor): 
+            y (tensor): 
+            sample (bool, optional): If sample is true, this function uses a reparameterization trick to return the latent variable and KL-Divergence loss. If sample is False, this function returns mean and variance. Default if True.
+            training (bool, optional): NOP
+        """
+
         batch_size = x.size()[0]
         number_peak = x.size()[1]
         x = x.long()
@@ -168,28 +177,13 @@ class ms_peak_encoder_cnn(nn.Module):
         self._print(h.shape)
         
         if sample:
-            ##t_vecs,t_kl_loss = self.rsample(h,self.T_mean,self.T_var,sample_rate=sample_rate)
-            ##g_vecs,g_kl_loss = self.rsample(h,self.G_mean,self.G_var,sample_rate=sample_rate)
-            ##h = torch.cat((t_vecs,g_vecs),1)
-            #h = F.leaky_relu(h)
-            #h = self.output(h)
-            ##kl_loss = t_kl_loss + g_kl_loss
             self._print = self.dumy
             return self.sampling(h,sample_rate=sample_rate)
-            #h,kl_loss = self.sampling(h,sample_rate=sample_rate)
-            #h = self.output(h)
-            #return h,kl_loss
         else:
-            #t_vecs = self.T_mean(h)
-            #g_vecs = self.G_mean(h)
-            #h = torch.cat((t_vecs,g_vecs),1)
-            #h = F.leaky_relu(h)
-            #h = self.output(h)
             self._print=self.dumy
-            return self.sampling(h,sample_rate=0.0)
-            #h,kl_loss = self.sampling(h,sample_rate=0.0)
-            #h = self.output(h)
-            #return h,kl_loss
+            z_mean = self.sampling.mean(h)
+            z_log_var = -torch.abs(self.sampling.var(h))
+            return z_mean,z_log_var
         
     def one_print(self,*args,**kargs):
         print(args)
@@ -241,7 +235,7 @@ class raw_spectrum_encoder(nn.Module):
                  conv2_channel=128,kernel2_width=5,\
                  conv_output_channel=256,conv_output_width=5,
                  hidden_size=100,num_rnn_layers=2,bidirectional=False,\
-                 output_size=56,dropout_rate=0.5,
+                 output_size=56,dropout_rate=0.5,use_batchnorm=False,
                  varbose=True):
         
         super(raw_spectrum_encoder, self).__init__()
@@ -258,17 +252,17 @@ class raw_spectrum_encoder(nn.Module):
         lay2_pad = int(((conv_output_width-1)/2))
 
         self.convSequential=nn.Sequential(OrderedDict([\
-            ('conv1-1',conv_set(1, conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
-            ('conv1-2',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
-            ('conv1-3',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=True)), \
+            ('conv1-1',conv_set(1, conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
+            ('conv1-2',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
+            ('conv1-3',conv_set(conv1_channel,         conv1_channel, kernel1_width, stride=1, padding=lay0_pad, use_batchnorm=use_batchnorm)), \
             ('pool1',nn.MaxPool1d(2)),\
-            ('conv2-1',conv_set(conv1_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=True)), \
-            ('conv2-2',conv_set(conv2_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=True)), \
-            ('conv2-3',conv_set(conv2_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=True)), \
+            ('conv2-1',conv_set(conv1_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=use_batchnorm)), \
+            ('conv2-2',conv_set(conv2_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=use_batchnorm)), \
+            ('conv2-3',conv_set(conv2_channel,         conv2_channel, kernel2_width, stride=1, padding=lay1_pad, use_batchnorm=use_batchnorm)), \
             ('pool2',nn.MaxPool1d(2)),\
-            ('conv3-1',conv_set(conv2_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=True)), \
-            ('conv3-2',conv_set(conv_output_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=True)), \
-            ('conv3-3',conv_set(conv_output_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=True)), \
+            ('conv3-1',conv_set(conv2_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=use_batchnorm)), \
+            ('conv3-2',conv_set(conv_output_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=use_batchnorm)), \
+            ('conv3-3',conv_set(conv_output_channel,         conv_output_channel, conv_output_width, stride=1, padding=lay2_pad, use_batchnorm=use_batchnorm)), \
             ('pool3',nn.MaxPool1d(2)),\
             ('transpose1',Transpose(1,2)), \
             ('dropout1',nn.Dropout(self.dropout_rate)), \

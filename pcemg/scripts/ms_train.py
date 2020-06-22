@@ -51,11 +51,14 @@ class MS_Train():
         self.starttime = datetime.datetime.fromtimestamp(time.time())
 
     def __call__(self):
+        """
+        データの準備とモデルの生成。
+        """
         tempdir = tempfile.TemporaryDirectory(prefix='ms-train')
         temp_path = Path(tempdir.name)
         print("\n")
         try:
-            self.copy_require_file(tempdir)
+            self.copy_require_file(tempdir) # copy to tempdir
             print(self.vocab_path)
             print(self.dataset_path)
 
@@ -76,25 +79,26 @@ class MS_Train():
             
             config = self.load_config()
 
-            dec_model = JTNNVAE(vocab=vocab,**config['JTVAE']).to('cuda')
+            self.dec_model = JTNNVAE(vocab=vocab,**config['JTVAE']).to('cuda')
             
-            enc_model = ms_peak_encoder_cnn(train_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
+            self.enc_model = ms_peak_encoder_cnn(train_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
             #enc_model = raw_spectrum_encoder(train_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
 
-            print(dec_model)
-            print(enc_model)
-            dec_model.load_state_dict(torch.load(self.load_model,map_location='cuda'))
+            print(self.dec_model)
+            print(self.enc_model)
+            self.dec_model.load_state_dict(torch.load(self.load_model,map_location='cuda'))
 
-            enc_optimizer = optim.Adam(enc_model.parameters(),lr=1e-03)
-            dec_optimizer = optim.Adam(dec_model.parameters(),lr=1e-03)
+            self.enc_optimizer = optim.Adam(self.enc_model.parameters(),lr=1e-03)
+            self.dec_optimizer = optim.Adam(self.dec_model.parameters(),lr=1e-03)
+
             try:
-                self.training(enc_model,dec_model,enc_optimizer,dec_optimizer,train_dataset,vali_dataset,temp_path,
+                self.training(train_dataset,vali_dataset,temp_path,
                     **config['TRAINING'])
             except KeyboardInterrupt:
                 print("User terminated.")
             finally:
                 print("Save last model.")
-                self.save_model(enc_model,dec_model,"model.iter-last",temp_path)
+                self.save_model("model.iter-last",temp_path)
 
         finally:
             str_time = self.starttime.strftime('%Y%m%d-%H%M')
@@ -103,7 +107,6 @@ class MS_Train():
             tempdir.cleanup()
 
     def training(self, \
-        enc_model,dec_model,enc_optimizer,dec_optimizer, \
         train_dataset, vali_dataset, \
         temp_path, \
         max_epoch = 300, word_rate=1,topo_rate=1,assm_rate=1,reg_rate=1, \
@@ -116,97 +119,124 @@ class MS_Train():
         temp_path.joinpath('enc_model').mkdir()
         temp_path.joinpath('dec_model').mkdir()
 
-        beta = init_beta
+        """
+            Initialize parameters
+        """
         meters = np.zeros(7)
 
-        enc_scheduler = lr_scheduler.ExponentialLR(enc_optimizer, anneal_rate)
-        dec_scheduler = lr_scheduler.ExponentialLR(dec_optimizer, anneal_rate)
+        self.hyperparameters = {
+            'beta':init_beta,
+            'word_rate':word_rate,
+            'topo_rate':topo_rate,
+            'assm_rate':assm_rate,
+            'reg_rate':reg_rate,
+            'fine_tunning_warmup':fine_tunning_warmup,
+        }
+
+        #enc_scheduler = lr_scheduler.ExponentialLR(self.enc_optimizer, anneal_rate)
+        #dec_scheduler = lr_scheduler.ExponentialLR(self.dec_optimizer, anneal_rate)
 
         with open(log_path,'w') as f:
-            f.write("epoch,iter.,kl_loss,word,topo,assm,wors_loss,topo_loss,assm_loss,vali word,vali topo,vali assm,vali_word_loss,vali_topo_loss,vali_assm_loss,l2_reg\n")
+            f.write("epoch,iter.,kl_loss,word,topo,assm,wors_loss,topo_loss,assm_loss,vali word,vali topo,vali assm,vali_word_loss,vali_topo_loss,vali_assm_loss\n")
 
-        for epoch,iteration,batch in self.get_batch(max_epoch,train_dataset,progress=True):
-            x_batch, x_jtenc_holder, x_mpn_holder, x_jtmpn_holder,x,y = batch
-            
-            x = x.to('cuda')
-            y = y.to('cuda')
+        iteration = 0
+        total_iter = len(train_dataset)*max_epoch
 
-            enc_model.zero_grad()
-            dec_model.zero_grad()
-            enc_optimizer.zero_grad()
-            dec_optimizer.zero_grad()
-            enc_model.train()
-            dec_model.train()
+        with tqdm(total=total_iter) as pbar:
 
-            h,kl_loss = enc_model(x,y,training=True,sample=True)
-            tree_vec = h[:,:int(h.shape[1]/2)]
-            mol_vec  = h[:,int(h.shape[1]/2):]
-            _, x_tree_mess = dec_model.jtnn(*x_jtenc_holder)
-            word_loss, topo_loss, word_acc, topo_acc = dec_model.decoder(x_batch,tree_vec)
-            assm_loss, assm_acc = dec_model.assm(x_batch, x_jtmpn_holder, mol_vec , x_tree_mess)
+            for epoch in range(1,max_epoch):
+                for batch in train_dataset:
 
-            l2_reg = 0
-            l2_reg = enc_model.params_norm()
-            #for W in enc_model.parameters():
-            #    if l2_reg is None:
-            #        l2_reg = W.norm(2)
-            #    else:
-            #        l2_reg = l2_reg + W.norm(2)
-            #for W in dec_model.parameters():
-            #    l2_reg = l2_reg + W.norm(2)
+                    meters += self.update(batch,epoch,iteration,**self.hyperparameters)
+                    iteration += 1
 
-            total_loss = word_loss*word_rate+\
-                topo_loss*topo_rate+\
-                assm_loss*assm_rate+\
-                kl_loss*beta +\
-                reg_rate*l2_reg
+                    if iteration % valid_interval == 0:
 
-            total_loss.backward()
-            enc_optimizer.step()
-            if epoch >= fine_tunning_warmup:
-                dec_optimizer.step()
+                        meters /= valid_interval
+                        vali_meters =self.vali_forward(vali_dataset)
+                        
+                        #sys.stdout.write("epoch: %04d, iteration: %08d\n" % (epoch,iteration))
+                        sys.stdout.write(f"{epoch} epoch[{iteration}] kl_loss %.2f, Word: %.2f, Topo: %.2f, Assm: %.2f vali_Word: %.2f, vali_Topo: %.2f, vali_assm: %.2f \n" % \
+                            (meters[0], meters[1], meters[2],meters[3], vali_meters[0],vali_meters[1],vali_meters[2]))             
+                        with open(log_path,"a") as f:
+                            f.write("%d,%d," % (epoch,iteration))
+                            f.write("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f," % (meters[0], meters[1], meters[2],meters[3],meters[4],meters[5],meters[6]))
+                            f.write("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f" % (vali_meters[0],vali_meters[1],vali_meters[2],vali_meters[3],vali_meters[4],vali_meters[5]))
+                            f.write("\n")
+                        sys.stdout.flush()
+                        meters *= 0
+                        vali_meters *= 0
+
+                    if iteration % save_interval == 0:
+                        self.save_model(f"model.iter-{iteration}",temp_path)
+
+                    pbar.update()
+
+                if epoch % kl_anneal_iter == 0 and epoch >= warmup:
+                    self.hyperparameters['beta'] = min(max_beta, self.hyperparameters['beta'] + step_beta)
+
                 if iteration % anneal_iter == 0 :
-                    #dec_scheduler.step()
+                    #enc_scheduler.step()
                     pass
+        
+
+    def update(self,batch,epoch,iteration, \
+        word_rate,topo_rate,assm_rate,beta,reg_rate,fine_tunning_warmup, \
+    ):
+
+        enc_model = self.enc_model
+        dec_model = self.dec_model
+        enc_optimizer = self.enc_optimizer
+        dec_optimizer = self.dec_optimizer
+
+        x_batch, x_jtenc_holder, x_mpn_holder, x_jtmpn_holder,x,y = batch
             
-            meters = meters + np.array([kl_loss.item(),word_acc * 100, topo_acc * 100, assm_acc * 100,word_loss.item(),topo_loss.item(),assm_loss.item()])
-            del x,y,h
-            if iteration % valid_interval == 0:
+        x = x.to('cuda')
+        y = y.to('cuda')
 
-                meters /= valid_interval
-                vali_meters =self.vali_forward(enc_model,dec_model,vali_dataset)
-                
-                #sys.stdout.write("epoch: %04d, iteration: %08d\n" % (epoch,iteration))
-                sys.stdout.write("%d epoch[%d] kl_loss %.2f, Word: %.2f, Topo: %.2f, Assm: %.2f vali_Word: %.2f, vali_Topo: %.2f, vali_assm: %.2f, l2_reg: %.2f \n" % \
-                    (epoch,iteration,meters[0], meters[1], meters[2],meters[3], vali_meters[0],vali_meters[1],vali_meters[2],l2_reg   ))             
-                with open(log_path,"a") as f:
-                    f.write("%d,%d," % (epoch,iteration))
-                    f.write("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f," % (meters[0], meters[1], meters[2],meters[3],meters[4],meters[5],meters[6]))
-                    f.write("%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f" % (vali_meters[0],vali_meters[1],vali_meters[2],vali_meters[3],vali_meters[4],vali_meters[5],l2_reg))
-                    f.write("\n")
-                sys.stdout.flush()
-                meters *= 0
-                vali_meters *= 0
+        enc_model.zero_grad()
+        dec_model.zero_grad()
+        enc_optimizer.zero_grad()
+        dec_optimizer.zero_grad()
+        enc_model.train()
+        dec_model.train()
 
-            if iteration % save_interval == 0:
-                #torch.save(enc_model.state_dict(), temp_path/"enc_model"/"model.iter-{}".format(str(iteration)))
-                #torch.save(dec_model.state_dict(), temp_path/"dec_model"/"model.iter-{}".format(str(iteration)))
-                self.save_model(enc_model,dec_model,f"model.iter-{iteration}",temp_path)
+        h,kl_loss = enc_model(x,y,sample=True,sample_rate=1)
+        tree_vec = h[:,:int(h.shape[1]/2)]
+        mol_vec  = h[:,int(h.shape[1]/2):]
+        _, x_tree_mess = dec_model.jtnn(*x_jtenc_holder)
+        word_loss, topo_loss, word_acc, topo_acc = dec_model.decoder(x_batch,tree_vec)
+        assm_loss, assm_acc = dec_model.assm(x_batch, x_jtmpn_holder, mol_vec , x_tree_mess)
 
-            if epoch % kl_anneal_iter == 0 and epoch >= warmup:
-                beta = min(max_beta, beta + step_beta)
+        l2_reg = 0
+        l2_reg = enc_model.params_norm()
+        #for W in enc_model.parameters():
+        #    if l2_reg is None:
+        #        l2_reg = W.norm(2)
+        #    else:
+        #        l2_reg = l2_reg + W.norm(2)
+        #for W in dec_model.parameters():
+        #    l2_reg = l2_reg + W.norm(2)
 
-            if iteration % anneal_iter == 0 :
-                #enc_scheduler.step()
-                pass
+        total_loss = word_loss*word_rate+\
+            topo_loss*topo_rate+\
+            assm_loss*assm_rate+\
+            kl_loss*beta +\
+            reg_rate*l2_reg
+
+        total_loss.backward()
+
+        enc_optimizer.step()
+        if epoch >= fine_tunning_warmup:
+            dec_optimizer.step()
         
-        self.save_model(enc_model,dec_model,"model.iter-last",temp_path)
+        meters = np.array([kl_loss.item(),word_acc * 100, topo_acc * 100, assm_acc * 100,word_loss.item(),topo_loss.item(),assm_loss.item()])
+        del x,y,h
+        return meters
 
-    def save_model(self,enc_model,dec_model,file_name,temp_path):
-        torch.save(enc_model.state_dict(), temp_path/"enc_model"/file_name)
-        torch.save(dec_model.state_dict(), temp_path/"dec_model"/file_name)
-
-        
+    def save_model(self,file_name,temp_path):
+        torch.save(self.enc_model.state_dict(), temp_path/"enc_model"/file_name)
+        torch.save(self.dec_model.state_dict(), temp_path/"dec_model"/file_name)        
 
     def copy_require_file(self,tempdir):
         temp_path = Path(tempdir.name)
@@ -229,12 +259,11 @@ class MS_Train():
                     iteration += 1
                     pbar.update()
 
-        #for epoch in progressbar(range(max_epoch),desc="epoch loop"):
-        #    for batch in progressbar(dataset,desc='iteration loop',total=len(dataset),leave=False):
-        #        iteration += 1
-        #        yield epoch,iteration,batch
-    
-    def vali_forward(self,enc_model,dec_model,vali_dataset):
+    def vali_forward(self,vali_dataset):
+
+        enc_model = self.enc_model
+        dec_model = self.dec_model
+
         vali_total = 0
         vali_meters = np.zeros(6)
         for batch in vali_dataset:
@@ -244,7 +273,7 @@ class MS_Train():
             with torch.no_grad():
                 enc_model.eval()
                 dec_model.eval()
-                h,_ = enc_model(x,y,training=False,sample=False)
+                h,_ = enc_model(x,y,sample=True,sample_rate=1)
                 tree_vec = h[:,:int(h.shape[1]/2)]
                 mol_vec  = h[:,int(h.shape[1]/2):]
                 _, x_tree_mess = dec_model.jtnn(*x_jtenc_holder)

@@ -127,13 +127,13 @@ def dataset_load(path,vocab,batch_size,train_validation_rate,select_fn=is_select
     return (train_dataset,valid_dataset)
         
 class MS_Dataset_pickle(object):
-    def __init__(self,dataset,vocab,batch_size,max_spectrum_size):
+    def __init__(self,dataset,vocab,batch_size,max_spectrum_size,shuffle=True):
         
         self.dataset = dataset
         self.max_spectrum_size = max_spectrum_size
         self.vocab = vocab
         self.batch_size = batch_size
-        self.shuffle = True
+        self.shuffle = shuffle
     
     def __len__(self):
         return math.floor(len(self.dataset)/self.batch_size)
