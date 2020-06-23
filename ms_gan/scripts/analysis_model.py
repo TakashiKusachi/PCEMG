@@ -9,7 +9,7 @@ from configparser import ConfigParser
 import pickle
 from glob import glob
 
-from pcemg.scripts.utils import is_env_notebook
+from ms_gan.scripts.utils import is_env_notebook
 if is_env_notebook():
     from tqdm.notebook import tqdm
 else:
@@ -28,8 +28,8 @@ import torch
 from multiprocessing import Pool
 
 from torch_jtnn import *
-from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn,raw_spectrum_encoder
+from ms_gan.datautil import dataset_load
+from ms_gan.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn,raw_spectrum_encoder
 
 class AnalysisModel():
     def __init__(self,trained_result_path,eval_mode):

@@ -12,7 +12,8 @@ from tarfile import TarFile
 import time,datetime
 from configparser import ConfigParser
 
-from pcemg.scripts.utils import is_env_notebook
+from ms_gan.scripts.utils import is_env_notebook
+
 if is_env_notebook():
     from tqdm.notebook import tqdm
 else:
@@ -24,8 +25,8 @@ from torch.autograd import Variable
 import torch.optim.lr_scheduler as lr_scheduler
 
 from torch_jtnn import *
-from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn,raw_spectrum_encoder
+from ms_gan.datautil import dataset_load
+from ms_gan.model.ms_encoder import ms_peak_encoder_cnn,raw_spectrum_encoder
 
 class MS_Train():
     """

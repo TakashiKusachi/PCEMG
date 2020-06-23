@@ -6,7 +6,7 @@ with open("./description.txt") as f:
     desctiprion = f.read()
 
 setup(
-    name="pcemg",
+    name="ms-gan",
     version="0.0.1",
     author="TakashiKusachi",
     description=desctiprion,

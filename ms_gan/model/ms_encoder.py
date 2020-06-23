@@ -125,7 +125,16 @@ class ms_peak_encoder_cnn(nn.Module):
             self.sampling = Sampling(hidden_size,output_size)
         self.output = nn.Linear(output_size,output_size)
         
-    def forward(self,x,y,sample=False,training=True,sample_rate=1):
+    def forward(self,x,y,sample=True,sample_rate=1):
+        """
+
+        Args:
+            x (tensor): 
+            y (tensor): 
+            sample (bool, optional): If sample is true, this function uses a reparameterization trick to return the latent variable and KL-Divergence loss. If sample is False, this function returns mean and variance. Default if True.
+            training (bool, optional): NOP
+        """
+        
         batch_size = x.size()[0]
         number_peak = x.size()[1]
         x = x.long()
