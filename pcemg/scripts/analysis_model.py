@@ -30,7 +30,7 @@ from multiprocessing import Pool
 
 from torch_jtnn import *
 from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn,raw_spectrum_encoder
+from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn
 
 class AnalysisModel():
     def __init__(self,trained_result_path,eval_mode):
@@ -330,6 +330,9 @@ class AnalysisModel():
 
 
     def load_config(self):
+        with self.model_config.open('r') as f:
+            print(f.read())
+
         config = ConfigParser()
         config.optionxform=str
         config.read(self.model_config)
@@ -337,7 +340,8 @@ class AnalysisModel():
         print(config.sections())
         ret = dict()
         ret['JTVAE'] = JTNNVAE.config_dict(config['JTVAE'])
-        ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
+        #ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
+        ret['PEAK_ENCODER'] = config['PEAK_ENCODER']
 
         return ret
     

@@ -11,8 +11,9 @@ import pickle
 from tarfile import TarFile
 import time,datetime
 from configparser import ConfigParser
+from distutils.util import strtobool
 
-from pcemg.scripts.utils import is_env_notebook
+from pcemg.scripts.utils import is_env_notebook,type_converter
 if is_env_notebook():
     from tqdm.notebook import tqdm
 else:
@@ -25,7 +26,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 
 from torch_jtnn import *
 from pcemg.datautil import dataset_load
-from pcemg.model.ms_encoder import ms_peak_encoder_cnn,raw_spectrum_encoder
+from pcemg.model.ms_encoder import ms_peak_encoder_cnn
 
 class MS_Train():
     """
@@ -113,11 +114,21 @@ class MS_Train():
         fine_tunning_warmup = 100, warmup= 200, init_beta= 0, step_beta=0.002, max_beta= 1, kl_anneal_iter= 10,\
         anneal_rate=0.8, anneal_iter=1000, \
         valid_interval=200, save_interval=200,\
+        **kwargs,
         ):
 
         log_path = temp_path/'log.csv'
         temp_path.joinpath('enc_model').mkdir()
         temp_path.joinpath('dec_model').mkdir()
+
+        max_epoch = type_converter(max_epoch,int)
+        word_rate,topo_rate,assm_rate = type_converter((word_rate,topo_rate,assm_rate),float)
+        fine_tunning_warmup,warmup = type_converter((fine_tunning_warmup,warmup),int)
+        init_beta,step_beta,max_beta = type_converter((init_beta,step_beta,max_beta),float)
+        kl_anneal_iter = type_converter(kl_anneal_iter,int)
+        anneal_rate = type_converter(anneal_rate,float)
+        anneal_iter = type_converter(anneal_iter,int)
+        valid_interval,save_interval = type_converter((valid_interval,save_interval),int)
 
         """
             Initialize parameters
@@ -292,8 +303,10 @@ class MS_Train():
         config.read(self.model_config)
         ret = dict()
         ret['JTVAE'] = JTNNVAE.config_dict(config['JTVAE'])
-        ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
-        ret['TRAINING'] = self.train_config(config['TRAINING'])
+        #ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
+        ret['PEAK_ENCODER'] = config['PEAK_ENCODER']
+        #ret['TRAINING'] = self.train_config(config['TRAINING'])
+        ret['TRAINING'] = config['TRAINING']
 
         return ret
     
