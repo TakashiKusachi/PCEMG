@@ -6,6 +6,9 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 from collections import OrderedDict
+from distutils.util import strtobool
+
+from ms_gan.scripts.utils import type_converter
 
 class Transpose(nn.Module):
     def __init__(self,dim1,dim2):
@@ -81,45 +84,60 @@ class Sampling(nn.Module):
 
 class ms_peak_encoder_cnn(nn.Module):
 
-    def __init__(self,max_mpz=1000,embedding_size=10,\
+    def __init__(self,input_size,max_mpz=1000,embedding_size=10,\
                  hidden_size=100,num_rnn_layers=2,bidirectional=False,\
-                 output_size=56,dropout_rate=0.5,
+                 output_size=56,dropout_rate=0.5,use_batchnorm=True,\
                  varbose=True,
                  num_layer=1,*args,**kwargs):
         
         super(ms_peak_encoder_cnn, self).__init__()
-        self._print = self.one_print if varbose else self.dumy
-        self.embedding_size = embedding_size
-        self.max_mpz = max_mpz
-        self.bidirectional=bidirectional
-        self.dropout_rate=dropout_rate
-        
+        self._print = self.one_print if type_converter(varbose,bool) else self.dumy
+
+        max_mpz = type_converter(max_mpz,int)
+        embedding_size = type_converter(embedding_size,int)
+        hidden_size = type_converter(hidden_size,int)
+        num_rnn_layers = type_converter(num_rnn_layers,int)
+        bidirectional = type_converter(bidirectional,strtobool)
+        output_size = type_converter(output_size,int)
+        dropout_rate = type_converter(dropout_rate,float)
+        use_batchnorm = type_converter(use_batchnorm,strtobool)
+        num_layer = type_converter(num_layer,int)
+
         self.embedding = nn.Embedding(max_mpz,embedding_size)
         
-        last_size = self.embedding_size+1
+        last_size = embedding_size+1
 
         module_list = nn.ModuleList()
+        module_dict = OrderedDict()
 
         for n_lay in range(num_layer):
             assert f'kernel{n_lay+1}_width' in kwargs,""
             assert f'conv{n_lay+1}_channel' in kwargs,""
 
-            kerneln_width = kwargs[f'kernel{n_lay+1}_width']
-            convn_channel = kwargs[f'conv{n_lay+1}_channel']
+            kerneln_width = type_converter(kwargs[f'kernel{n_lay+1}_width'],int)
+            convn_channel = type_converter(kwargs[f'conv{n_lay+1}_channel'],int)
             layn_pad = int(((kerneln_width-1)/2))
 
-            module_list.append(conv_set(last_size,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=True))
-            module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=True))
-            module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=True))
+            module_dict[f'conv{n_lay+1}-1'] = conv_set(last_size,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
+            module_dict[f'conv{n_lay+1}-2'] = conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
+            module_dict[f'conv{n_lay+1}-3'] = conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
+            #module_list.append(conv_set(last_size,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
+            #module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
+            #module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
             last_size = convn_channel
-        module_list.append(Transpose(1,2))
-        module_list.append(nn.Dropout(self.dropout_rate))
-        module_list.append(nn.GRU(input_size=last_size, hidden_size=hidden_size, batch_first=True, num_layers=num_rnn_layers, bidirectional=bidirectional))
-        module_list.append(GRUOutput(self.bidirectional))
-        module_list.append(nn.Dropout(self.dropout_rate))
-        self.convSequential = nn.Sequential(*module_list)
+        module_dict['transpose1'] = Transpose(1,2)
+        module_dict['dropout1'] = nn.Dropout(dropout_rate)
+        module_dict['gru'] = nn.GRU(input_size=last_size, hidden_size=hidden_size, batch_first=True, num_layers=num_rnn_layers, bidirectional=bidirectional)
+        module_dict['gru-output'] = GRUOutput(bidirectional)
+        module_dict['dropout2'] = nn.Dropout(dropout_rate)
+        #module_list.append(Transpose(1,2))
+        #module_list.append(nn.Dropout(dropout_rate))
+        #module_list.append(nn.GRU(input_size=last_size, hidden_size=hidden_size, batch_first=True, num_layers=num_rnn_layers, bidirectional=bidirectional))
+        #module_list.append(GRUOutput(bidirectional))
+        #module_list.append(nn.Dropout(dropout_rate))
+        self.convSequential = nn.Sequential(module_dict)
 
-        if self.bidirectional:
+        if bidirectional:
             self.sampling = Sampling(hidden_size*2,output_size)
         else:
             self.sampling = Sampling(hidden_size,output_size)
@@ -134,7 +152,7 @@ class ms_peak_encoder_cnn(nn.Module):
             sample (bool, optional): If sample is true, this function uses a reparameterization trick to return the latent variable and KL-Divergence loss. If sample is False, this function returns mean and variance. Default if True.
             training (bool, optional): NOP
         """
-        
+
         batch_size = x.size()[0]
         number_peak = x.size()[1]
         x = x.long()
@@ -159,7 +177,9 @@ class ms_peak_encoder_cnn(nn.Module):
             return self.sampling(h,sample_rate=sample_rate)
         else:
             self._print=self.dumy
-            return self.sampling(h,sample_rate=0.0)
+            z_mean = self.sampling.mean(h)
+            z_log_var = -torch.abs(self.sampling.var(h))
+            return z_mean,z_log_var
         
     def one_print(self,*args,**kargs):
         print(args)

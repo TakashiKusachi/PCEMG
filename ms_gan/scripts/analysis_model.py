@@ -18,6 +18,7 @@ else:
 import re
 import csv
 import numpy as np
+import torch
 
 import rdkit
 from rdkit import Chem
@@ -29,7 +30,7 @@ from multiprocessing import Pool
 
 from torch_jtnn import *
 from ms_gan.datautil import dataset_load
-from ms_gan.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn,raw_spectrum_encoder
+from ms_gan.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn
 
 class AnalysisModel():
     def __init__(self,trained_result_path,eval_mode):
@@ -57,6 +58,7 @@ class AnalysisModel():
 
             with open(self.vali_file,'rb') as f:
                 vali_dataset = pickle.load(f)
+            vali_dataset.shuffle = False
 
             with open(self.vocab_path,'r') as f:
                 vocab,_ = zip(*[(x.split(',')[0].strip('\n\r'),int(x.split(',')[1].strip('\n\r'))) for x in f ])
@@ -82,50 +84,18 @@ class AnalysisModel():
                 [3.0,10]
             ]
 
-            class Fetcher():
-                def __init__(self,sample_rate,times,eval_mode):
-                    self.vali_dataset = vali_dataset
-                    self.enc_model = enc_model
-                    self.dec_model = dec_model
-                    self.__length = lambda: self.vali_dataset.batch_size * len(self.vali_dataset)
-                    self.__eval_mode = eval_mode
-                    self.sample_rate = sample_rate
-                    self.times = times
-
-                def __len__(self):
-                    return self.__length()
-                
-
-                def eval_mode(self):
-                    if self.__eval_mode is False:
-                        return
-
-                    self.enc_model.eval()
-                    self.dec_model.eval()
-
-                def __iter__(self):
-                    vali_dataset =self.vali_dataset
-                    enc_model = self.enc_model
-                    dec_model = self.dec_model
-                    sample_rate = self.sample_rate
-
-                    for batch in vali_dataset:
-                        x_batch, x_jtenc_holder, x_mpn_holder, x_jtmpn_holder,x,y = batch
-                        x = x.to('cuda')
-                        y = y.to('cuda')
-
-                        self.eval_mode()
-                        h,_ = enc_model(x,y,training=False,sample=True,sample_rate=sample_rate)   
-                        hlatent_size = int(h.shape[1]/2)  
-                        tree_vec = h[:,:hlatent_size]
-                        mol_vec  = h[:,hlatent_size:]
-                        
-                        for num in range(h.size()[0]):
-                            a_tree_vec = tree_vec[num].view(1,hlatent_size)
-                            a_mol_vec = mol_vec[num].view(1,hlatent_size)
-                            yield a_tree_vec,a_mol_vec
-
             def evaluation(eval_mode):
+                """ Predict molecular structure from spectrum in validation datasets.
+                
+                Args:
+                    eval_mode (bool):
+                
+                Returns:
+                    List_SMILES (list of string): 
+                    mean (ndarray): 
+                    log_var (ndarray):
+
+                """
                 result = []
                 true_smiles = []
 
@@ -134,12 +104,49 @@ class AnalysisModel():
                 for _,times in sample_rate_list:
                     total_iter += times
 
+                mean = list()
+                log_var = list()
+
+                if eval_mode:
+                    enc_model.eval()
+                    dec_model.eval()
 
                 # 正解分子構造の取り出し
-                for batch in vali_dataset:
-                    x_batch = batch[0]
+                print("Encoding")
+                for batch in tqdm(vali_dataset):
+                    x_batch, _, _, _,x,y = batch
                     true_smiles.extend([[Chem.MolToSmiles(Chem.MolFromSmiles(x_data.smiles),True)] for x_data in x_batch])
 
+                    x = x.to('cuda')
+                    y = y.to('cuda')
+
+                    b_mean,b_log_var = enc_model(x,y,sample=False)
+                    mean.append(b_mean)
+                    log_var.append(b_log_var)
+                
+                mean = torch.cat(mean,dim=0)
+                log_var = torch.cat(log_var,dim=0)
+                print('mean shape',mean.shape)
+
+                with tqdm(total=total_iter) as q:
+                    for rate,times in sample_rate_list:
+                        q.set_description(desc="sample rate: "+str(rate))
+                        epsilon = torch.randn_like(mean)
+                        z = mean + torch.exp(log_var/2)*epsilon*log_var
+                        length = z.size(0)
+                        point_split = int(z.size(1) / 2)
+                        tree_vec = z[:,:point_split]
+                        mol_vec = z[:,point_split:]
+
+                        for num,(tree,mol) in tqdm(enumerate([(tree_vec[b:b+1],mol_vec[b:b+1]) for b in range(length)]),leave=False,total=length):
+                            predict_smiles = dec_model.decode(tree,mol,False)
+                            predict_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(predict_smiles),True)
+                            true_smiles[num].append(predict_smiles)
+                            
+                        q.update()
+
+
+                """
                 with tqdm(total=total_iter) as q:
                     # 検証のための構造予測のループ
                     for rate,times in sample_rate_list:
@@ -150,17 +157,21 @@ class AnalysisModel():
                                 predict_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(predict_smiles),True)
                                 true_smiles[num].append(predict_smiles)
                             q.update()
-                
-                return true_smiles
+                """
+                return true_smiles,mean.to('cpu').detach().numpy(),log_var.to('cpu').detach().numpy()
 
 
             with torch.no_grad():
 
-                result = evaluation(self.__eval_mode)
+                result,mean,log_var = evaluation(self.__eval_mode)
 
                 print(len(result))
                 print(len(result[0]))
             
+            log_path = temp_path / "mean_table.csv"
+            np.savetxt(str(log_path),mean,delimiter=',',fmt='%.5e')
+            shutil.copy(log_path,"./mean_table.csv")
+
             scores = AnalysisModel.calc_similarity(result)
             max_scores,hist,over_thre = self.statistics(scores)
 
@@ -319,6 +330,9 @@ class AnalysisModel():
 
 
     def load_config(self):
+        with self.model_config.open('r') as f:
+            print(f.read())
+
         config = ConfigParser()
         config.optionxform=str
         config.read(self.model_config)
@@ -326,7 +340,8 @@ class AnalysisModel():
         print(config.sections())
         ret = dict()
         ret['JTVAE'] = JTNNVAE.config_dict(config['JTVAE'])
-        ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
+        #ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
+        ret['PEAK_ENCODER'] = config['PEAK_ENCODER']
 
         return ret
     
