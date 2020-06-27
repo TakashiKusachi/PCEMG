@@ -1,4 +1,5 @@
 import sys
+import distutils.util
 
 def getEnvironment():
     try:
@@ -15,6 +16,9 @@ def getEnvironment():
 
 def is_env_notebook():
     return 'ipykernel' in sys.modules
+
+def strtobool(x):
+    return bool(distutils.util.strtobool(x))
 
 def type_converter(x,_type):
     """ クラスの変換関数

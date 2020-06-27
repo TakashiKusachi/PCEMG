@@ -11,9 +11,8 @@ import pickle
 from tarfile import TarFile
 import time,datetime
 from configparser import ConfigParser
-from distutils.util import strtobool
 
-from pcemg.scripts.utils import is_env_notebook,type_converter
+from pcemg.scripts.utils import is_env_notebook,type_converter,strtobool
 if is_env_notebook():
     from tqdm.notebook import tqdm
 else:
@@ -29,15 +28,13 @@ from pcemg.datautil import dataset_load
 from pcemg.model.ms_encoder import ms_peak_encoder_cnn
 
 class MS_Train():
-    """
-    Training of peak_encoder and JTVAE-decoder.
+    """Training of peak_encoder and JTVAE-decoder.
 
 
     """
-    def __init__(self,vocab_path,dataset_path,load_model,model_config,train_vali_rate = 0.9):
+    def __init__(self,vocab_path,dataset_path,model_config,load_model=None,train_vali_rate = 0.9):
         assert Path(vocab_path).is_file(),""
         assert Path(dataset_path).is_file(),""
-        assert Path(load_model).is_file,""
 
         if not Path(model_config).exists():
             chart_config()
@@ -87,7 +84,19 @@ class MS_Train():
 
             print(self.dec_model)
             print(self.enc_model)
-            self.dec_model.load_state_dict(torch.load(self.load_model,map_location='cuda'))
+            
+            if self.load_model is not None:
+                self.dec_model.load_state_dict(torch.load(self.load_model,map_location='cuda'))
+            else:
+                print('Caution!!. Load model is not specified. Decoder parameters are learned in the initial state.')
+                try:
+                    ret = strtobool(input('Is it OK?[Y/n] >>'))
+                except ValueError as e:
+                    raise e
+
+                if ret is False:
+                    raise RuntimeError("")
+                
 
             self.enc_optimizer = optim.Adam(self.enc_model.parameters(),lr=1e-03)
             self.dec_optimizer = optim.Adam(self.dec_model.parameters(),lr=1e-03)
@@ -116,13 +125,27 @@ class MS_Train():
         valid_interval=200, save_interval=200,\
         **kwargs,
         ):
+        """Training process
+
+        Args:
+            train_dataset (dataset):
+            vali_dataset (dataset):
+            temp_path (Path): 
+            max_epoch (int or str): Default is 300.
+            word_rate (float or str): Default is 1.0.
+            topo_rate (float or str): Default is 1.0.
+            assm_rate (float or str): Default is 1.0.
+            reg_rate (float or str): Default is 1.0.
+            fine_tunning_warmup (int or str): Default is 100
+
+        """
 
         log_path = temp_path/'log.csv'
         temp_path.joinpath('enc_model').mkdir()
         temp_path.joinpath('dec_model').mkdir()
 
         max_epoch = type_converter(max_epoch,int)
-        word_rate,topo_rate,assm_rate = type_converter((word_rate,topo_rate,assm_rate),float)
+        word_rate,topo_rate,assm_rate,reg_rate = type_converter((word_rate,topo_rate,assm_rate,reg_rate),float)
         fine_tunning_warmup,warmup = type_converter((fine_tunning_warmup,warmup),int)
         init_beta,step_beta,max_beta = type_converter((init_beta,step_beta,max_beta),float)
         kl_anneal_iter = type_converter(kl_anneal_iter,int)
@@ -144,9 +167,6 @@ class MS_Train():
             'fine_tunning_warmup':fine_tunning_warmup,
         }
 
-        #enc_scheduler = lr_scheduler.ExponentialLR(self.enc_optimizer, anneal_rate)
-        #dec_scheduler = lr_scheduler.ExponentialLR(self.dec_optimizer, anneal_rate)
-
         with open(log_path,'w') as f:
             f.write("epoch,iter.,kl_loss,word,topo,assm,wors_loss,topo_loss,assm_loss,vali word,vali topo,vali assm,vali_word_loss,vali_topo_loss,vali_assm_loss\n")
 
@@ -166,7 +186,6 @@ class MS_Train():
                         meters /= valid_interval
                         vali_meters =self.vali_forward(vali_dataset)
                         
-                        #sys.stdout.write("epoch: %04d, iteration: %08d\n" % (epoch,iteration))
                         sys.stdout.write(f"{epoch} epoch[{iteration}] kl_loss %.2f, Word: %.2f, Topo: %.2f, Assm: %.2f vali_Word: %.2f, vali_Topo: %.2f, vali_assm: %.2f \n" % \
                             (meters[0], meters[1], meters[2],meters[3], vali_meters[0],vali_meters[1],vali_meters[2]))             
                         with open(log_path,"a") as f:
@@ -221,13 +240,6 @@ class MS_Train():
 
         l2_reg = 0
         l2_reg = enc_model.params_norm()
-        #for W in enc_model.parameters():
-        #    if l2_reg is None:
-        #        l2_reg = W.norm(2)
-        #    else:
-        #        l2_reg = l2_reg + W.norm(2)
-        #for W in dec_model.parameters():
-        #    l2_reg = l2_reg + W.norm(2)
 
         total_loss = word_loss*word_rate+\
             topo_loss*topo_rate+\
@@ -253,8 +265,11 @@ class MS_Train():
         temp_path = Path(tempdir.name)
         self.vocab_path = shutil.copy(self.__vocab_path,temp_path)
         self.dataset_path = shutil.copy(self.__dataset_path,temp_path)
-        self.load_model = shutil.copy(self.__load_model,temp_path)
         self.model_config = shutil.copy(self.__model_config,temp_path)
+        if self.__load_model is not None:
+            self.load_model = shutil.copy(self.__load_model,temp_path)
+        else:
+            self.load_model = None
 
     def get_batch(self,max_epoch,dataset,progress=False):
         iteration = 0
@@ -303,46 +318,22 @@ class MS_Train():
         config.read(self.model_config)
         ret = dict()
         ret['JTVAE'] = JTNNVAE.config_dict(config['JTVAE'])
-        #ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
         ret['PEAK_ENCODER'] = config['PEAK_ENCODER']
-        #ret['TRAINING'] = self.train_config(config['TRAINING'])
         ret['TRAINING'] = config['TRAINING']
 
         return ret
-    
-    @staticmethod
-    def train_config(config=None):
-        if config is None:
-            config = {'max_epoch':300, 'word_rate':1, 'topo_rate':1, 'assm_rate':1, 'reg_rate':1, \
-                'fine_tunning_warmup':100, 'warmup':200, 'init_beta':0, 'step_beta':0.002, 'max_beta':1, 'kl_anneal_iter':10,\
-                'anneal_rate':0.8,'anneal_iter':1000, \
-                'valid_interval':200, 'save_interval':200,}
-        else:
-            config ={key:conv(config[key]) for key,conv in zip(
-                ['max_epoch', 'word_rate', 'topo_rate', 'assm_rate', 'reg_rate', \
-                'fine_tunning_warmup', 'warmup', 'init_beta', 'step_beta', 'max_beta', 'kl_anneal_iter',\
-                'anneal_rate','anneal_iter', \
-                'valid_interval', 'save_interval',],
-                [int,float,float,float,float,int,int,float,float,float,int,float,int,int,int,])
-                
-        }
-        return config
 
 def chart_config():
-    from configparser import ConfigParser
-    config = ConfigParser()
-    config.optionxform = str
-    config['JTVAE'] = JTNNVAE.config_dict()
-    config['PEAK_ENCODER']=ms_peak_encoder_cnn.config_dict()
-    config['TRAINING'] = MS_Train.train_config()
 
-    with open("model_config.ini",'w') as f:
-        config.write(f)
+    import pkgutil
+    print(pkgutil.get_data('pcemg','scripts/data/config.ini'))
+    with open('config_.ini','wb') as f:
+        f.write(pkgutil.get_data('pcemg','scripts/data/config.ini'))
 
-def ms_train(vocab_path,dataset_path,load_model,model_config):
+def ms_train(vocab_path,dataset_path,model_config,load_model=None):
     lg = rdkit.RDLogger.logger() 
     lg.setLevel(rdkit.RDLogger.CRITICAL)
-    MS_Train(vocab_path,dataset_path,load_model,model_config)()
+    MS_Train(vocab_path,dataset_path,model_config,load_model=load_model)()
 
 def main():
     lg = rdkit.RDLogger.logger() 

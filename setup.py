@@ -15,6 +15,7 @@ setup(
         'torch',
         'torch-jtnn >= 0.0.1'
     ],
+    package_data ={'pcemg':['scripts/data/*.ini']},
     extras_require={
         'example':[
             'gitpython','scikit-learn','tqdm'

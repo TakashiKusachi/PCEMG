@@ -6,9 +6,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 from collections import OrderedDict
-from distutils.util import strtobool
 
-from pcemg.scripts.utils import type_converter
+from pcemg.scripts.utils import type_converter,strtobool
 
 class Transpose(nn.Module):
     def __init__(self,dim1,dim2):
@@ -110,6 +109,7 @@ class ms_peak_encoder_cnn(nn.Module):
         module_list = nn.ModuleList()
         module_dict = OrderedDict()
 
+        print(bidirectional)
         for n_lay in range(num_layer):
             assert f'kernel{n_lay+1}_width' in kwargs,""
             assert f'conv{n_lay+1}_channel' in kwargs,""
@@ -121,20 +121,13 @@ class ms_peak_encoder_cnn(nn.Module):
             module_dict[f'conv{n_lay+1}-1'] = conv_set(last_size,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
             module_dict[f'conv{n_lay+1}-2'] = conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
             module_dict[f'conv{n_lay+1}-3'] = conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm)
-            #module_list.append(conv_set(last_size,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
-            #module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
-            #module_list.append(conv_set(convn_channel,convn_channel,kerneln_width,stride=1,padding=layn_pad,use_batchnorm=use_batchnorm))
             last_size = convn_channel
         module_dict['transpose1'] = Transpose(1,2)
         module_dict['dropout1'] = nn.Dropout(dropout_rate)
         module_dict['gru'] = nn.GRU(input_size=last_size, hidden_size=hidden_size, batch_first=True, num_layers=num_rnn_layers, bidirectional=bidirectional)
         module_dict['gru-output'] = GRUOutput(bidirectional)
         module_dict['dropout2'] = nn.Dropout(dropout_rate)
-        #module_list.append(Transpose(1,2))
-        #module_list.append(nn.Dropout(dropout_rate))
-        #module_list.append(nn.GRU(input_size=last_size, hidden_size=hidden_size, batch_first=True, num_layers=num_rnn_layers, bidirectional=bidirectional))
-        #module_list.append(GRUOutput(bidirectional))
-        #module_list.append(nn.Dropout(dropout_rate))
+        
         self.convSequential = nn.Sequential(module_dict)
 
         if bidirectional:
@@ -212,18 +205,6 @@ class ms_peak_encoder_cnn(nn.Module):
 
         #norm = torch.sum([param.norm(order) for param in target_params])
         return s_norm
-    
-    @staticmethod
-    def config_dict(config=None):
-        if config is None:
-            config = {'max_mpz':1000,'embedding_size':10,'conv1_channel':64,'kernel1_width':5,'hidden_size':200,'num_rnn_layers':2,'bidirectional':False,'output_size':56,'dropout_rate':0.2}
-        else:
-            config ={key:conv(config[key]) for key,conv in zip(
-                ['max_mpz','embedding_size','conv1_channel','kernel1_width','hidden_size','num_rnn_layers','bidirectional','output_size','dropout_rate'],
-                [int,int,int,int,int,int,lambda x:x == 'True',int,float])
-                
-        }
-        return config
 
     
 if __name__=="__main__":

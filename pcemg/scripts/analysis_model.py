@@ -17,6 +17,7 @@ else:
 
 import re
 import csv
+import openpyxl
 import numpy as np
 import torch
 
@@ -32,10 +33,14 @@ from torch_jtnn import *
 from pcemg.datautil import dataset_load
 from pcemg.model.ms_encoder import ms_peak_encoder_cnn as ms_peak_encoder_cnn
 
+import logging
+from logging import getLogger
+
 class AnalysisModel():
-    def __init__(self,trained_result_path,eval_mode):
+    def __init__(self,trained_result_path,eval_mode,logger=None):
         self.__trained_result_path = trained_result_path
         self.__eval_mode  = eval_mode
+        self.__logger = logger
         self.starttime = datetime.datetime.fromtimestamp(time.time())
         
     def __call__(self):
@@ -51,6 +56,7 @@ class AnalysisModel():
             tempdir = tempfile.TemporaryDirectory(prefix='analysis_model-')
             temp_path = Path(tempdir.name)
 
+            self.__logger.info(f"Temp path:{temp_path}")
             log = (temp_path/"log").open('w')
 
             self.copy_require_file(tempdir)
@@ -69,10 +75,10 @@ class AnalysisModel():
             
             enc_model = ms_peak_encoder_cnn(vali_dataset.max_spectrum_size,**config['PEAK_ENCODER'],varbose=False).to('cuda')
             
-            print(enc_model)
-            print(dec_model)
+            print(f"Structuer of Encoder\n {enc_model}")
+            print(f"Structuer of Decoder\n {dec_model}")
             enc_model_path,dec_model_path = AnalysisModel.select_iter(self.model_list,self.iter_list)
-            print(enc_model_path,dec_model_path)
+            self.__logger.info(f"{enc_model_path},{dec_model_path}")
             
 
             enc_model.load_state_dict(torch.load(enc_model_path,map_location='cuda'))
@@ -100,9 +106,13 @@ class AnalysisModel():
                 true_smiles = []
 
                 total_data = vali_dataset.batch_size * len(vali_dataset)
+
+                rate_list = list()
                 total_iter = 0
-                for _,times in sample_rate_list:
-                    total_iter += times
+                for rate,times in sample_rate_list:
+                    rate_list.extend([rate for _ in range(times)])
+                total_iter = len(rate_list)
+                self.__logger.info(f"rate_list :{rate_list}")
 
                 mean = list()
                 log_var = list()
@@ -112,8 +122,7 @@ class AnalysisModel():
                     dec_model.eval()
 
                 # 正解分子構造の取り出し
-                print("Encoding")
-                for batch in tqdm(vali_dataset):
+                for batch in tqdm(vali_dataset,desc="Encoding"):
                     x_batch, _, _, _,x,y = batch
                     true_smiles.extend([[Chem.MolToSmiles(Chem.MolFromSmiles(x_data.smiles),True)] for x_data in x_batch])
 
@@ -126,13 +135,13 @@ class AnalysisModel():
                 
                 mean = torch.cat(mean,dim=0)
                 log_var = torch.cat(log_var,dim=0)
-                print('mean shape',mean.shape)
+                self.__logger.info(f"mean shape: {mean.shape}")
 
                 with tqdm(total=total_iter) as q:
-                    for rate,times in sample_rate_list:
+                    for rate in rate_list:
                         q.set_description(desc="sample rate: "+str(rate))
                         epsilon = torch.randn_like(mean)
-                        z = mean + torch.exp(log_var/2)*epsilon*log_var
+                        z = mean + torch.exp(log_var/2)*epsilon*rate
                         length = z.size(0)
                         point_split = int(z.size(1) / 2)
                         tree_vec = z[:,:point_split]
@@ -189,8 +198,12 @@ class AnalysisModel():
                 writer.writerows(scores)
                 writer.writerow([])
                 writer.writerow(['<'+str(p / 100) for p in range(5,105,5)])
-                writer.writerow([str(one) for one in hist])
+                writer.writerow([str(one) for one in hist])            
+
             shutil.copy(log_path,"./area_sample_result.csv")
+            
+            log_path = temp_path / "area_sample_result.xlsx"
+            self.save_result_to_xlsx(sample_rate_list,result,log_path)
 
         finally:
             str_time = self.starttime.strftime('%Y%m%d-%H%M')
@@ -208,13 +221,12 @@ class AnalysisModel():
         with TarFile.open(trained_result_path,"r:gz") as f:
             f.extractall(path=temp_path)
 
-        self.model_list,self.iter_list = AnalysisModel.find_trained_model(temp_path)
-        self.model_config = AnalysisModel.find_config_file(temp_path)
-        self.vocab_path = AnalysisModel.find_vocab_file(temp_path)
-        self.vali_file = AnalysisModel.find_validata(temp_path)
+        self.model_list,self.iter_list = self.find_trained_model(temp_path)
+        self.model_config = self.find_config_file(temp_path)
+        self.vocab_path = self.find_vocab_file(temp_path)
+        self.vali_file = self.find_validata(temp_path)
 
-    @staticmethod
-    def find_trained_model(temp_path):
+    def find_trained_model(self,temp_path):
         
         def extract_iter_num(mlist):
             for path in mlist:
@@ -235,22 +247,19 @@ class AnalysisModel():
         }
         return model_list,iter_list
     
-    @staticmethod
-    def find_config_file(temp_path):
+    def find_config_file(self,temp_path):
         model_config = list(temp_path.glob('./**/model_config.ini'))[0]
-        print(model_config)
+        self.__logger.info(f"Model Configuration file path:{model_config}")
         return model_config
     
-    @staticmethod
-    def find_vocab_file(temp_path):
+    def find_vocab_file(self,temp_path):
         vocab = list(temp_path.glob('./**/MS_vocab.txt'))[0]
-        print(vocab)
+        self.__logger.info(vocab)
         return vocab
         
-    @staticmethod
-    def find_validata(temp_path):
+    def find_validata(self,temp_path):
         vali = list(temp_path.glob('./**/vali_data.pkl'))[0]
-        print(vali)
+        self.__logger.info(vali)
         return vali
 
 
@@ -336,16 +345,24 @@ class AnalysisModel():
         config = ConfigParser()
         config.optionxform=str
         config.read(self.model_config)
-        print(self.model_config.name)
-        print(config.sections())
+        self.__logger.info(f"{config.sections()}")
         ret = dict()
         ret['JTVAE'] = JTNNVAE.config_dict(config['JTVAE'])
         #ret['PEAK_ENCODER'] = ms_peak_encoder_cnn.config_dict(config['PEAK_ENCODER'])
         ret['PEAK_ENCODER'] = config['PEAK_ENCODER']
 
         return ret
-    
 
+    def save_result_to_xlsx(self,sample_rate_list,result,file_name="area_sample_result.xlsx"):
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.append(['rate','number of times'])
+        ws1.append(sample_rate_list)
+        ws1.append(result)
+
+        wb.save(file_name)
+
+    
 def _proc(args):
     true_finger = args['true_finger']
     pred_smiles = args['pred_smiles']
@@ -357,8 +374,17 @@ def _proc(args):
     }
     return ret
 
-def analysisModel(trained_result_path,eval_mode=True):
-    AnalysisModel(trained_result_path,eval_mode)()
+def analysisModel(trained_result_path,eval_mode=True,logger=None,loglevel=logging.WARN):
+    if logger is None:
+        rv = logging._checkLevel(loglevel)
+        logger = getLogger(__name__)
+        stream_handler = logging.StreamHandler()
+        stream_handler.setLevel(rv)
+        stream_handler.setFormatter(logging.Formatter("[%(levelname)s]:%(message)s"))
+        logger.addHandler(stream_handler)
+        logger.setLevel(rv)
+
+    AnalysisModel(trained_result_path,eval_mode,logger=logger)()
 
 def main():
     lg = rdkit.RDLogger.logger() 
@@ -366,6 +392,7 @@ def main():
     parser = ArgumentParser()
 
     parser.add_argument('trained_result_path',type=str)
+    parser.add_argument('--loglevel',default='WARN')
 
     args = parser.parse_args()
 
