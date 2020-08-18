@@ -203,7 +203,7 @@ class AnalysisModel():
             shutil.copy(log_path,"./area_sample_result.csv")
             
             log_path = temp_path / "area_sample_result.xlsx"
-            self.save_result_to_xlsx(sample_rate_list,result,log_path)
+            #self.save_result_to_xlsx(sample_rate_list,result,log_path)
 
         finally:
             str_time = self.starttime.strftime('%Y%m%d-%H%M')
