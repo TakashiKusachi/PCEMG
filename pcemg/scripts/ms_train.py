@@ -324,7 +324,8 @@ class MS_Train():
         return ret
 
 def chart_config():
-
+    """ configファイルの生成
+    """
     import pkgutil
     print(pkgutil.get_data('pcemg','scripts/data/config.ini'))
     with open('config_.ini','wb') as f:

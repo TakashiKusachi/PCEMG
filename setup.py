@@ -29,7 +29,7 @@ setup(
             'sphinx'
             ],
     },
-    packages=find_packages(exclude=['example','tests']),
+    packages=find_packages(exclude=['example','tests','docs']),
     entry_points={
         'console_scripts':[
         ]

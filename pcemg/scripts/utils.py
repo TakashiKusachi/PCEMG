@@ -27,6 +27,9 @@ def type_converter(x,_type):
     Args:
         x (object or tuple of objects): 変換対象のオブジェクト。str想定
         _type (functions): 目的の型に変換するメソッド。intやfloat。boolの場合は、distutils.util.strtoboolを推奨
+    
+    Returns:
+        tutple of any or any type: 変換後のobject。xがtupleであればtupleで、単体であれば単体で返却する。
     """
 
     if isinstance(x,tuple):

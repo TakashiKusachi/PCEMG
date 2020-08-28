@@ -1,4 +1,7 @@
 #!/bin/bash
+""" 質量スペクトルのデータセットライブラリ
+
+"""
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -87,13 +90,36 @@ class MS_Dataset(object):
         del batches, dataset, dataloader
 
 def is_select(one):
+    """ データの選定処理(default)
+    Args:
+        one (dict): 
+    
+    Returns:
+        bool: 与えられたデータが許可された場合はtrue、そうでなければfalse
+    
+    Note:
+        条件式は順序に影響します。
+
+    """
     return one["smiles"]!="N/A" and one["ms_type"]=="MS" and one["instrument_type"]=="EI-B" and "ionization_energy" in one and one["ionization_energy"]=="70 eV" and one["ion_mode"]=="POSITIVE" and "2H" not in one["smiles"] #and round(rdMolDescriptors._CalcMolWt(Chem.MolFromSmiles(one['smiles']))) in one['peak_x'].astype(int) 
 
 def data_catch(one):
+    """
+    """
     mol = molfromsmiles(one["smiles"])
     return (one["peak_x"],one["peak_y"],mol)
 
 def dataset_load(path,vocab,batch_size,train_validation_rate,select_fn=is_select,save="./MS_Dataset.pkl"):
+    """ データセットロード関数
+        pickle圧縮された生データセットから、不要なデータの除去と成型、データセットサブクラス（MS_Dataset_pickle）の生成
+
+    Args:
+        path (str):
+        vocab(str):
+        batch_size (int):
+        train_validation_rate (float):
+        select_fn (function):
+    """
     lg = rdkit.RDLogger.logger() 
     lg.setLevel(rdkit.RDLogger.CRITICAL)
 

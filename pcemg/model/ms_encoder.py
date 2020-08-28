@@ -1,4 +1,6 @@
 #!/bin/bash
+""" スペクトルエンコーダモデル
+"""
 
 import torch
 import torch.nn as nn
@@ -10,11 +12,34 @@ from collections import OrderedDict
 from pcemg.scripts.utils import type_converter,strtobool
 
 class Transpose(nn.Module):
-    def __init__(self,dim1,dim2):
+    """ 次元の入れ替え関数
+
+    torch.nn.Sequential用に、次元入れ替え操作をレイヤとして組み込むためのクラス
+
+    Attributes:
+        dims (tuple of ints): 入れ替える次元のタプル。dims[0] <-> dims[1].
+
+
+    """
+    def __init__(self,dim1: int,dim2: int):
+        """ 
+        Args:
+            dim1 (int): test
+            dim2 (int): test 
+
+        """
         super(Transpose,self).__init__()
         self.dims = (dim1,dim2)
     
     def forward(self,*inputs):
+        """ 入れ替え操作の実行
+
+        Args: 
+            inputs (tuple of Tensors): 対象のTensorのtuple
+
+        Returns:
+            tuple of Tensor: 
+        """
         length = len(inputs)
         if length == 1:
             return inputs[0].transpose(*self.dims)
@@ -37,10 +62,31 @@ class GRUOutput(nn.Module):
         
 
 class conv_set(nn.Module):
+    """ 畳み込み層の前後処理を含めた複合層
+
+    """
     def __init__(self, \
             in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zero', \
             use_batchnorm=True,eps=1e-05, momentum=0.1, affine=True, track_running_stats=True, \
             ):
+        """
+        Args:
+            in_channels (int): 畳み込み層のin_channels
+            out_channels (int): 畳み込み層のout_channels
+            kernel_size (int): 畳み込み層のkernel_size
+            stride (int):
+            padding (int):
+            dilation (int):
+            groups (int):
+            bias (bool):
+            padding_mode (str):
+            use_batchnorm (bool):
+            eps (float):
+            momentum (float):
+            affine (bool):
+            track_running_stats (bool):
+
+        """
         super(conv_set,self).__init__()
         module_list = nn.ModuleList()
 
@@ -111,8 +157,8 @@ class ms_peak_encoder_cnn(nn.Module):
 
         print(bidirectional)
         for n_lay in range(num_layer):
-            assert f'kernel{n_lay+1}_width' in kwargs,""
-            assert f'conv{n_lay+1}_channel' in kwargs,""
+            assert f'kernel{n_lay+1}_width' in kwargs,f"kernel{n_lay+1}_widthが設定されていません。"
+            assert f'conv{n_lay+1}_channel' in kwargs,f"conv{n_lay+1}_channelが設定されていません。"
 
             kerneln_width = type_converter(kwargs[f'kernel{n_lay+1}_width'],int)
             convn_channel = type_converter(kwargs[f'conv{n_lay+1}_channel'],int)
