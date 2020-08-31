@@ -1,3 +1,9 @@
+""" scriptのサブライブラリ
+
+各scriptで共通だったり、本質と関係ない処理関数群
+
+"""
+
 import sys
 import distutils.util
 
@@ -17,11 +23,22 @@ def getEnvironment():
 def is_env_notebook():
     return 'ipykernel' in sys.modules
 
-def strtobool(x):
+def strtobool(x: str):
+    """ 文字列真偽値 to bool 変換関数
+    
+    文字列で書かれた真偽値(True,Y,y,False,N,n)をpythonのbool型に変換する。
+
+    Args:
+        x (str): 文字列で書かれた真偽値。strtobool参照
+    
+    Returns:
+        bool: 変換された真偽値
+    """
     return bool(distutils.util.strtobool(x))
 
 def type_converter(x,_type):
     """ クラスの変換関数
+
     pythonのconfigparserが辞書で返してくれるのはいいけど、valueがstringなので、指定の型に変換する。
 
     Args:
